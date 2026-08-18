@@ -1,6 +1,7 @@
 """连接与探查域（SPEC 3.3/3.4）：连接 CRUD、连通性测试、只读元数据探查。"""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -26,6 +27,17 @@ class ConnectionIn(BaseModel):
 
 # 前端状态枚举（connected/unreachable/unknown）← 内部状态（active/error）
 _STATUS_MAP = {"active": "connected", "error": "unreachable"}
+
+
+def _jsonable(v: object) -> object:
+    """样本值 → JSONB 可序列化（驱动会返回 Decimal/datetime/bytes）。"""
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, (datetime, date)):
+        return v.isoformat()
+    if isinstance(v, bytes):
+        return v.hex()
+    return v
 
 
 def _conn_out(c: Connection) -> dict:
@@ -172,7 +184,7 @@ async def run_profile(
     result = await connector.profile(resolve_config(c.config_json), object_name, sample_size)
     # 3. 样本脱敏（不变式：masked_sample_json 不得含未脱敏敏感值）
     masked_sample = [
-        {col: mask_cell(col, val) for col, val in row.items()} for row in result.sample
+        {col: mask_cell(col, _jsonable(val)) for col, val in row.items()} for row in result.sample
     ]
     # 4. 落库（只追加表）
     row = MetadataProfile(
