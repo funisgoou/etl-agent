@@ -41,10 +41,9 @@ INTENT_SYSTEM = (
 async def parse_intent(state: StudioState) -> dict:
     """意图解析：LLM 抽取 + 服务端补全连接 ID 与缺参判定。"""
     # 1. 服务端事实：项目内候选连接与文件资产（LLM 不猜 ID）
-    from app.core.db import session_factory
+    from app.core.db import make_session_factory
 
-    assert session_factory is not None
-    async with session_factory() as db:
+    async with make_session_factory()() as db:
         conns = (
             await db.execute(
                 select(Connection).where(Connection.project_id == state["project_id"])
@@ -145,14 +144,13 @@ async def clarify(state: StudioState) -> dict:
 
 async def probe_metadata(state: StudioState) -> dict:
     """元数据探查：复用连接器 profile（只读），产出 profiles。"""
-    from app.core.db import session_factory
+    from app.core.db import make_session_factory
     from app.core.secret_provider import resolve_config
     from app.domain.connectors.base import CONNECTOR_REGISTRY
 
     intent = state["intent"] or {}
-    assert session_factory is not None
     profiles: dict[str, Any] = {}
-    async with session_factory() as db:
+    async with make_session_factory()() as db:
         # 1. 源探查（mysql 表或 CSV 文件资产）；表名净化：LLM 可能带库名前缀
         if intent.get("source_conn_id"):
             conn = (await db.execute(select(Connection).where(Connection.id == intent["source_conn_id"]))).scalar_one()
