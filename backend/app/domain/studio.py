@@ -78,8 +78,8 @@ async def _run_graph_and_persist(run_id: int, thread_id: str, init_state: dict) 
             if interrupt_info:
                 status = "waiting_input"
                 intr = state_snapshot.tasks
-                # 取第一个 interrupt 的 payload
-                for task in intr.values():
+                # 取第一个 interrupt 的 payload（tasks 为 tuple，直接迭代）
+                for task in intr:
                     if getattr(task, "interrupts", None):
                         pending_q = task.interrupts[0].value
                         break
@@ -114,6 +114,12 @@ async def _run_graph_and_persist(run_id: int, thread_id: str, init_state: dict) 
                 await db.commit()
 
 
+def _run_graph_thread(run_id: int, thread_id: str, init_state: dict) -> None:
+    """独立线程跑图：Windows 宿主下请求循环是 Proactor（uvicorn 建循环早于 main.py 的策略设置），
+    psycopg（PostgresSaver）需要 Selector 循环；Linux 下等价无害。"""
+    asyncio.run(_run_graph_and_persist(run_id, thread_id, init_state))
+
+
 @router.post("/versions/{version_id}/generation", status_code=202)
 async def start_generation(
     version_id: int,
@@ -143,12 +149,12 @@ async def start_generation(
     run = AgentRun(version_id=version_id, thread_id=thread_id, prompt=body.prompt, status="running")
     db.add(run)
     await db.commit()
-    # 3. 后台执行（BackgroundTasks 与请求同循环；新会话工厂后台自建）
+    # 3. 后台执行（同步函数由 Starlette 丢到线程池 → 独立 Selector 循环；新会话工厂后台自建）
     init_state = {
         "version_id": version_id, "project_id": project_id, "thread_id": thread_id,
         "prompt": body.prompt, "clarifications": [], "step_trace": [], "repair_round": 0,
     }
-    bg.add_task(_run_graph_and_persist, run.id, thread_id, init_state)
+    bg.add_task(_run_graph_thread, run.id, thread_id, init_state)
     return {"run_id": run.id, "thread_id": thread_id, "status": "running"}
 
 
@@ -229,8 +235,10 @@ async def submit_answer(
     run.status = "running"
     run.pending_question_json = None
     await db.commit()
-    # 2. 后台恢复执行
-    bg.add_task(_resume_graph_and_persist, run.id, run.thread_id, body.answer, run.version_id)
+    # 2. 后台恢复执行（同触发生成：线程池独立循环）
+    bg.add_task(
+        lambda: asyncio.run(_resume_graph_and_persist(run.id, run.thread_id, body.answer, run.version_id))
+    )
     return {"run_id": run.id, "status": "running"}
 
 
@@ -252,7 +260,7 @@ async def _resume_graph_and_persist(run_id: int, thread_id: str, answer: dict, v
             status, pending_q, error = "running", None, None
             if state_snapshot.next:
                 status = "waiting_input"
-                for task in state_snapshot.tasks.values():
+                for task in state_snapshot.tasks:
                     if getattr(task, "interrupts", None):
                         pending_q = task.interrupts[0].value
                         break

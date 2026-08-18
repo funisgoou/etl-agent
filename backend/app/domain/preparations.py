@@ -325,14 +325,25 @@ async def list_preparations(
         q = q.where(Preparation.status == status)
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     rows = (await db.execute(q.order_by(Preparation.id.desc()).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    from app.db_model import User
+
     items = []
     for prep in rows:
         reqs = (await db.execute(
             select(ApprovalRequest).where(ApprovalRequest.preparation_id == prep.id)
         )).scalars().all()
+        v = (await db.execute(select(PipelineVersion).where(PipelineVersion.id == prep.version_id))).scalar_one_or_none()
+        pipe = (await db.execute(select(Pipeline).where(Pipeline.id == v.pipeline_id))).scalar_one_or_none() if v else None
+        maker = (await db.execute(select(User).where(User.id == prep.maker_id))).scalar_one_or_none()
         items.append({
             "id": prep.id, "code": f"PR-{prep.id:03d}", "version_id": prep.version_id,
-            "maker_id": prep.maker_id, "status": prep.status, "expires_at": prep.expires_at,
+            "pipeline_id": v.pipeline_id if v else None,
+            "pipeline_name": pipe.name if pipe else None,
+            "maker_id": prep.maker_id, "maker_name": maker.display_name if maker else None,
+            "status": prep.status, "expires_at": prep.expires_at,
+            "input_fingerprint": prep.input_fingerprint, "resource_scope": prep.resource_scope,
+            "impact_json": prep.impact_json, "budget_json": prep.budget_json,
+            "rollback_plan_json": prep.rollback_plan_json,
             "risk_level": prep.risk_level, "data_classification": prep.data_classification,
             "created_at": prep.created_at,
             "approval_requests": [

@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.agent.state import GateFinding, GateReport, IntentSpec, StudioState
 from app.compiler.quality_contract import ContractCompileError, compile as compile_contract
+from app.compiler.quality_contract import _MASKING_EXPRS, _OPERATOR_PREDICATES
 from app.core.llm_client import chat
 from app.db_model import Connection, FileAsset, PipelineVersion
 
@@ -83,7 +84,8 @@ async def parse_intent(state: StudioState) -> dict:
         "source_table": draft.source_table,
         "file_asset_id": draft.file_asset_id,
         "target_conn_id": tgt.id if tgt else None,
-        "target_table": draft.target_table,
+        # 表名净化：LLM 可能带库名前缀/反引号（与 probe 的 source_table 净化一致）
+        "target_table": (draft.target_table or "").rsplit(".", 1)[-1].strip("`\" ") or None,
         "quality_requirements": draft.quality_requirements or [],
         "data_classification": draft.data_classification if draft.data_classification in
         ("public", "internal", "confidential", "secret") else "internal",
@@ -126,9 +128,9 @@ async def clarify(state: StudioState) -> dict:
     for f in missing:
         if f in answer and answer[f]:
             if f == "target_table":
-                updated["target_table"] = str(answer[f])
+                updated["target_table"] = str(answer[f]).rsplit(".", 1)[-1].strip("`\" ")
             elif f == "source_table":
-                updated["source_table"] = str(answer[f])
+                updated["source_table"] = str(answer[f]).rsplit(".", 1)[-1].strip("`\" ")
     updated["missing"] = [f for f in missing if f not in answer or not answer[f] and f in ("target_table", "source_table")]
     # 仍然系统级缺失（连接不存在）直接失败转人工
     hard = [f for f in updated["missing"] if f in ("source", "target_conn")]
@@ -309,11 +311,17 @@ async def repair(state: StudioState) -> dict:
     plan = state.get("etl_plan") or {}
     profiles = state.get("profiles", {})
     src_cols = {c["name"] for c in profiles.get("source", {}).get("schema", {}).get("columns", [])}
-    # 1. 剔除非法映射与规则列
+    # 1. 剔除非法映射与规则列（含未知算子——LLM 会编造 is_not_null 之类的变体）
     plan["mappings"] = [m for m in plan.get("mappings", []) if m["source"] in src_cols]
     contract = plan.get("quality_contract", {})
-    contract["rules"] = [r for r in contract.get("rules", []) if r.get("column") in src_cols]
-    contract["masking"] = [m for m in contract.get("masking", []) if m.get("column") in src_cols]
+    contract["rules"] = [
+        r for r in contract.get("rules", [])
+        if r.get("column") in src_cols and r.get("operator") in _OPERATOR_PREDICATES
+    ]
+    contract["masking"] = [
+        m for m in contract.get("masking", [])
+        if m.get("column") in src_cols and m.get("operator") in _MASKING_EXPRS
+    ]
     contract["columns"] = [m["target"] for m in plan["mappings"]]
     # 2. 修复后落回计划再复检
     return {"etl_plan": plan, "repair_round": round_no, "step_trace": [f"repair_round_{round_no}"]}
