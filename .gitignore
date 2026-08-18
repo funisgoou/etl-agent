@@ -25,3 +25,7 @@ celerybeat-schedule*
 # IDE
 .idea/
 .vscode/
+
+# 前端
+node_modules/
+dist/
