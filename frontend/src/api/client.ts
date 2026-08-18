@@ -50,12 +50,13 @@ function handleUnauthorized() {
   }
 }
 
-type Query = Record<string, string | number | boolean | undefined | null>
+/** 查询参数对象（任意可枚举对象，值为标量） */
+type Query = object
 
 function buildUrl(path: string, params?: Query): string {
   const url = path.startsWith('http') || path === '/health' ? path : `${BASE_URL}${path}`
   if (!params) return url
-  const qs = Object.entries(params)
+  const qs = Object.entries(params as Record<string, unknown>)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
     .join('&')

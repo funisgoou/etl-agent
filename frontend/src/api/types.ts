@@ -330,6 +330,8 @@ export interface ApprovalRequest {
 
 export interface Preparation {
   id: number
+  /** 展示用单号，如 PR-018（演示字段） */
+  code?: string
   version_id: number
   pipeline_id?: number
   pipeline_name?: string

@@ -12,7 +12,6 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "incremental": false,
-    "tsBuildInfoFile": null,
 
     "noEmit": true,
     "isolatedModules": true,

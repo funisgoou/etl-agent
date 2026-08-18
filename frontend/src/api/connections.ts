@@ -48,7 +48,7 @@ export const fileApi = {
   },
   // ASSUMED: 接口文档只有上传，原型数据资产页需要文件资产列表
   list(projectId: number | string, params?: { page?: number; page_size?: number }) {
-    return get<Page<FileAsset>>('/file-assets', { ...params, project_id: projectId })
+    return get<Page<FileAsset>>(`/projects/${projectId}/file-assets`, params)
   },
   // ASSUMED: 原型资产页需要删除文件资产
   remove(id: number) {
