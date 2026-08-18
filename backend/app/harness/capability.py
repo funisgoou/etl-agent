@@ -52,7 +52,7 @@ async def ensure_keypair(session: AsyncSession) -> None:
         return
     row = (await session.execute(select(Keyring).order_by(Keyring.id.desc()).limit(1))).scalar_one_or_none()
     if row is None:
-        # 1. 生成并加密入库
+        # 1. 生成并加密入库（密文以 base64 文本存 BYTEA）
         _priv = Ed25519PrivateKey.generate()
         _key_id = f"cap-{secrets.token_hex(4)}"
         session.add(
@@ -61,7 +61,7 @@ async def ensure_keypair(session: AsyncSession) -> None:
                 public_key_b64=base64.b64encode(
                     _priv.public_key().public_bytes_raw()
                 ).decode(),
-                encrypted_private_key=_encrypt(_serialize_priv(_priv).decode()),
+                encrypted_private_key=_encrypt(_serialize_priv(_priv).decode()).encode(),
             )
         )
         await session.flush()
@@ -69,7 +69,7 @@ async def ensure_keypair(session: AsyncSession) -> None:
     else:
         # 2. 加载既有密钥
         _key_id = row.key_id
-        _priv = _load_priv(_decrypt(row.encrypted_private_key).encode())
+        _priv = _load_priv(_decrypt(row.encrypted_private_key.decode()).encode())
 
 
 @dataclass(frozen=True, slots=True)

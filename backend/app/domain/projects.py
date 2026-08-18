@@ -30,13 +30,13 @@ class ProjectOut(BaseModel):
 
 
 class MemberIn(BaseModel):
-    user_id: int
+    user_id: int | None = None
     role: str
-    username: str | None = None  # 支持 username 直填（前端友好，二选一）
+    username: str | None = None  # user_id 与 username 二选一
 
 
 class GrantIn(BaseModel):
-    user_id: int
+    user_id: int | None = None
     role_slot: str
     username: str | None = None
 

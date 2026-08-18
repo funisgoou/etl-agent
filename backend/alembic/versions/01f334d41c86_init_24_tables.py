@@ -197,7 +197,7 @@ def upgrade() -> None:
     sa.Column('role', sa.String(length=32), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint("role in ('engineer','approver_data','approver_security','operator','auditor')"),
+    sa.CheckConstraint("role in ('admin','engineer','approver_data','approver_security','operator','auditor')"),
     sa.ForeignKeyConstraint(['project_id'], ['projects.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),

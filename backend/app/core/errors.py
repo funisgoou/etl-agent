@@ -39,7 +39,7 @@ class ApiError(Exception):
         self.details = details
 
 
-def _envelope(code: str, message: str, details: dict | None) -> dict:
+def _envelope(code: str, message: str, details: dict | None = None) -> dict:
     return {"code": code, "message": message, "details": details, "trace_id": uuid.uuid4().hex}
 
 

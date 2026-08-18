@@ -22,6 +22,7 @@ def init_redis() -> None:
 
 async def dispose_redis() -> None:
     """关闭连接池。"""
+    global _client
     if _client is not None:
         await _client.aclose()
         _client = None
