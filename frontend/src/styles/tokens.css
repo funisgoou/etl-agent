@@ -1,0 +1,92 @@
+/* ============================================================
+   ETL·Agent 「深空数据观测站」设计令牌 — 全项目唯一视觉标准
+   ============================================================ */
+:root {
+  /* 背景层级 */
+  --bg-0: #05080f;
+  --bg-1: #0a1120;
+  --bg-2: #0e1830;
+
+  /* 面板 */
+  --panel: rgba(15, 23, 42, 0.66);
+  --panel-strong: rgba(15, 23, 42, 0.92);
+
+  /* 描边 */
+  --line: rgba(148, 163, 184, 0.14);
+  --line-strong: rgba(148, 163, 184, 0.28);
+
+  /* 文字 */
+  --txt-0: #e6edf7;
+  --txt-1: #94a3b8;
+  --txt-2: #5b6b83;
+
+  /* 语义色 */
+  --cyan: #22d3ee;
+  --blue: #60a5fa;
+  --violet: #a78bfa;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --red: #fb7185;
+
+  /* 品牌渐变 / 发光 / 圆角 */
+  --grad: linear-gradient(135deg, #22d3ee 0%, #818cf8 55%, #c084fc 100%);
+  --glow: 0 0 24px rgba(34, 211, 238, 0.18);
+  --glow-strong: 0 0 40px rgba(34, 211, 238, 0.32);
+  --r-lg: 16px;
+  --r-md: 12px;
+  --r-sm: 8px;
+
+  /* 数字 / ID / 哈希 / 代码字体 */
+  --font-num: 'JetBrains Mono', ui-monospace, monospace;
+  --font-ui: 'Sora', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+
+  /* 动效 */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------- 全局背景层：极光 + 细网格 ---------- */
+.app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--bg-0);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-bg::before {
+  /* 多层极光：cyan / violet 低透明度，缓动漂浮 */
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(42% 36% at 18% 12%, rgba(34, 211, 238, 0.14) 0%, transparent 70%),
+    radial-gradient(38% 34% at 82% 8%, rgba(167, 139, 250, 0.13) 0%, transparent 70%),
+    radial-gradient(46% 42% at 55% 95%, rgba(96, 165, 250, 0.1) 0%, transparent 70%),
+    radial-gradient(30% 28% at 90% 70%, rgba(192, 132, 252, 0.09) 0%, transparent 70%);
+  animation: aurora-drift 36s var(--ease-out) infinite alternate;
+}
+
+.app-bg::after {
+  /* 细网格线纹理 */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(80% 70% at 50% 30%, #000 30%, transparent 100%);
+  animation: grid-drift 60s linear infinite;
+}
+
+@keyframes aurora-drift {
+  0% { transform: translate3d(-2%, -1%, 0) scale(1); }
+  50% { transform: translate3d(2%, 2%, 0) scale(1.06); }
+  100% { transform: translate3d(-1%, 1%, 0) scale(1.02); }
+}
+
+@keyframes grid-drift {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 44px 88px, 44px 88px; }
+}

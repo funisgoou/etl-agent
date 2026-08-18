@@ -1,0 +1,27 @@
+# 密钥与环境（绝不入库）
+.env
+*.key
+*.pem
+
+# Agent 工作目录与个人文件
+AGENTS.md
+.workbuddy/
+.claude/
+docs/面试讲解*.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+uv.lock.bak
+
+# 运行残留
+*.log
+*.err
+*.pid
+beat-schedule*
+celerybeat-schedule*
+
+# IDE
+.idea/
+.vscode/

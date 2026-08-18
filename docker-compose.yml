@@ -1,0 +1,162 @@
+name: etl-agent
+
+# datalane 固定子网：doris 镜像要求 FE_SERVERS/BE_ADDR 可解析，用静态 IP（fe=172.28.1.1 / be=172.28.1.2）。
+networks:
+  datalane:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+services:
+  # ── 控制面存储（始终启动） ──
+  postgresql:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: etl
+      POSTGRES_PASSWORD: etl
+      POSTGRES_DB: etlagent
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etl"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ── 数据面（profile: datalane） ──
+  mysql-src:
+    image: mysql:8.0
+    profiles: ["datalane"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: biz_demo
+      MYSQL_USER: etl_reader
+      MYSQL_PASSWORD: reader123
+    ports: ["3307:3306"]
+    volumes:
+      - ./deploy/mysql-init:/docker-entrypoint-initdb.d:ro
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+
+  doris-fe:
+    image: apache/doris:fe-2.1.11
+    profiles: ["datalane"]
+    networks:
+      datalane:
+        ipv4_address: 172.28.1.1
+    ports: ["18030:8030", "19030:9030"]
+    environment:
+      FE_SERVERS: "fe1:172.28.1.1:9010"
+      FE_ID: 1
+
+  doris-be:
+    image: apache/doris:be-2.1.11
+    profiles: ["datalane"]
+    networks:
+      datalane:
+        ipv4_address: 172.28.1.2
+    depends_on: [doris-fe]
+    ports: ["8040:8040"]
+    environment:
+      FE_SERVERS: "fe1:172.28.1.1:9010"
+      BE_ADDR: "172.28.1.2:9050"
+    volumes:
+      - dorisbe:/opt/apache-doris/be/storage
+    # sed 绕过容器环境检查（vm.max_map_count 真实需求见 HANDOVER §3.5）
+    entrypoint: ["sh", "-c", "sed -i 's/swapon -s | wc -l/echo 0/; s/-e .*vm.max_map_count.*//; s/exit 1/true/g' /opt/apache-doris/be/bin/start_be.sh && exec /opt/apache-doris/be/bin/start_be.sh"]
+
+  # Doris 初始化：设 root 密码 + 建 ods/tmp_dry_run 库（FE 无持久化卷，每次重建幂等执行）
+  doris-init:
+    image: mysql:8.0
+    profiles: ["datalane"]
+    networks: [datalane]
+    depends_on: [doris-fe]
+    restart: "no"
+    entrypoint: ["sh", "-c", "
+      for i in $(seq 1 60); do mysql -h doris-fe -P 9030 -u root --connect-timeout=2 -e 'SELECT 1' && break || sleep 5; done;
+      mysql -h doris-fe -P 9030 -u root -e \"SET PASSWORD FOR 'root' = PASSWORD('doris123')\" 2>/dev/null || true;
+      mysql -h doris-fe -P 9030 -u root -pdoris123 -e 'CREATE DATABASE IF NOT EXISTS ods; CREATE DATABASE IF NOT EXISTS tmp_dry_run;';
+      echo doris-init done"]
+
+  seatunnel:
+    image: apache/seatunnel:2.3.12
+    profiles: ["datalane"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: ["5801:5801", "8080:8080"]
+    volumes:
+      - ./deploy/seatunnel-lib:/opt/seatunnel/lib/extra
+      - ./deploy/seatunnel-config/hazelcast.yaml:/opt/seatunnel/config/hazelcast.yaml:ro
+    command: ["sh", "-c", "/opt/seatunnel/bin/seatunnel-cluster.sh -DJocker 2>&1 | tee /tmp/st.log"]
+
+  minio:
+    image: minio/minio:latest
+    profiles: ["datalane"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+
+  # ── 控制面服务（profile: control） ──
+  api:
+    build: ./backend
+    profiles: ["control"]
+    depends_on:
+      postgresql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    environment: &backend_env
+      DATABASE_URL: postgresql+asyncpg://etl:etl@postgresql:5432/etlagent
+      REDIS_URL: redis://redis:6379/0
+      SECRET_MASTER_KEY: ${SECRET_MASTER_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL_ID: ${LLM_MODEL_ID:-}
+      SEATUNNEL_URL: http://seatunnel:5801
+      DORIS_HOST: doris-fe
+      DORIS_PORT: 9030
+      DORIS_USER: root
+      DORIS_PASSWORD: doris123
+      DORIS_DATABASE: ods
+      DORIS_DRYRUN_DATABASE: tmp_dry_run
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      MINIO_BUCKET: etl-assets
+      MINIO_SECURE: "false"
+      DEMO_SEED: "true"
+    ports: ["8000:8000"]
+    command: >
+      sh -c "alembic upgrade head &&
+             python -c 'import asyncio;from app.core.seed import run_seed;asyncio.run(run_seed())' &&
+             python -m app.worker.relay &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build: ./backend
+    profiles: ["control"]
+    depends_on: [api]
+    environment: *backend_env
+    command: celery -A app.worker.celery_app.celery_app worker --loglevel=INFO -c 2
+
+  beat:
+    build: ./backend
+    profiles: ["control"]
+    depends_on: [api]
+    environment: *backend_env
+    command: celery -A app.worker.celery_app.celery_app beat --loglevel=INFO
+
+volumes:
+  dorisbe:
+  pgdata:
+  miniodata:

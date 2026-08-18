@@ -1,0 +1,37 @@
+[project]
+name = "etl-agent-backend"
+version = "1.0.0"
+description = "ETL-Agent 数据集成平台控制面后端（FastAPI + LangGraph + Harness 安全内核）"
+requires-python = "==3.12.*"
+dependencies = [
+    # Web 层
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.18",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    # 控制面存储
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "greenlet>=3.1",
+    "alembic>=1.14",
+    # 异步执行
+    "celery[redis]>=5.4",
+    "redis>=5.2",
+    # Agent 编排（LangGraph 1.x，checkpoint 走 PostgresSaver，D10）
+    "langgraph>=1.0",
+    "langgraph-checkpoint-postgres>=2.0",
+    # LLM（OpenAI 兼容协议）
+    "openai>=1.60",
+    # 安全内核
+    "cryptography>=44.0",
+    # 数据面客户端
+    "aiomysql>=0.2",
+    "httpx>=0.28",
+    "minio>=7.2",
+    # 日志
+    "structlog>=24.4",
+]
+
+[tool.uv]
+package = false

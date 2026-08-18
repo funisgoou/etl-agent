@@ -1,0 +1,114 @@
+/* ---------- 基础重置与全局工具类 ---------- */
+* { box-sizing: border-box; }
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--txt-0);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(34, 211, 238, 0.28);
+  color: #fff;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(148, 163, 184, 0.34); }
+
+a { color: var(--cyan); text-decoration: none; }
+
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: 0.01em; }
+
+/* 数字 / ID / 哈希 / 代码 */
+.mono, .num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 渐变文字 */
+.grad-text {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* 玻璃面板基类（组件 GlassPanel 之外的轻量用法） */
+.glass {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* 悬浮微交互：上移 + 发光 */
+.hover-lift {
+  transition: transform 0.28s var(--ease-out), box-shadow 0.28s var(--ease-out),
+    border-color 0.28s var(--ease-out);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glow);
+  border-color: var(--line-strong);
+}
+
+/* 渐变描边按钮（在 el-button 之外的场景使用） */
+.btn-grad-outline {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(var(--bg-1), var(--bg-1)) padding-box,
+    var(--grad) border-box;
+  color: var(--txt-0);
+}
+
+/* ---------- 页面切换 fade-slide ---------- */
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity 0.26s var(--ease-out), transform 0.26s var(--ease-out);
+}
+.page-fade-enter-from { opacity: 0; transform: translateY(10px); }
+.page-fade-leave-to { opacity: 0; transform: translateY(-6px); }
+
+/* ---------- 通用淡入 ---------- */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise-in { animation: rise-in 0.5s var(--ease-out) both; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+  50% { opacity: 0.55; }
+}
+
+/* 状态点 */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.dot.is-live { animation: pulse-dot 1.6s ease-in-out infinite; }

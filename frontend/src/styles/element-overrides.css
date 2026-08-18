@@ -1,0 +1,86 @@
+/* ---------- Element Plus 深色定制（需先引入 element-plus/theme-chalk/dark/css-vars.css） ---------- */
+html.dark {
+  /* 主色：观测站青 */
+  --el-color-primary: #22d3ee;
+  --el-color-primary-light-3: #5fe0f5;
+  --el-color-primary-light-5: #8be9f8;
+  --el-color-primary-light-7: #b7f2fb;
+  --el-color-primary-light-8: #cff7fc;
+  --el-color-primary-light-9: rgba(34, 211, 238, 0.12);
+  --el-color-primary-dark-2: #0ea8c4;
+
+  --el-color-success: #34d399;
+  --el-color-warning: #fbbf24;
+  --el-color-danger: #fb7185;
+  --el-color-error: #fb7185;
+  --el-color-info: #94a3b8;
+
+  /* 背景对齐深空色系 */
+  --el-bg-color: #0e1830;
+  --el-bg-color-page: #05080f;
+  --el-bg-color-overlay: #0a1120;
+
+  /* 文字对齐 tokens */
+  --el-text-color-primary: #e6edf7;
+  --el-text-color-regular: #c4cfdf;
+  --el-text-color-secondary: #94a3b8;
+  --el-text-color-placeholder: #5b6b83;
+  --el-text-color-disabled: #43516a;
+
+  /* 边框 */
+  --el-border-color: rgba(148, 163, 184, 0.28);
+  --el-border-color-light: rgba(148, 163, 184, 0.18);
+  --el-border-color-lighter: rgba(148, 163, 184, 0.14);
+  --el-border-color-extra-light: rgba(148, 163, 184, 0.08);
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: 999px;
+
+  /* 填充（hover/disabled 底） */
+  --el-fill-color: rgba(148, 163, 184, 0.14);
+  --el-fill-color-light: rgba(148, 163, 184, 0.09);
+  --el-fill-color-lighter: rgba(148, 163, 184, 0.06);
+  --el-fill-color-blank: transparent;
+
+  --el-mask-color: rgba(3, 6, 12, 0.72);
+  --el-box-shadow: 0 12px 40px rgba(2, 6, 16, 0.55);
+  --el-box-shadow-light: 0 6px 24px rgba(2, 6, 16, 0.4);
+}
+
+/* 弹层玻璃化 */
+html.dark .el-popper.is-light,
+html.dark .el-select__wrapper,
+html.dark .el-picker__popper.el-popper {
+  backdrop-filter: blur(14px);
+}
+
+/* 表格深色 */
+html.dark .el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(148, 163, 184, 0.06);
+  --el-table-row-hover-bg-color: rgba(34, 211, 238, 0.06);
+  --el-table-border-color: var(--line);
+}
+
+/* 对话框 / 抽屉 */
+html.dark .el-dialog,
+html.dark .el-drawer {
+  background: var(--panel-strong);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--line);
+}
+
+/* 主按钮渐变微光 */
+html.dark .el-button--primary:not(.is-link):not(.is-text) {
+  background: linear-gradient(135deg, #0891b2 0%, #22d3ee 100%);
+  border: none;
+  color: #032530;
+  font-weight: 600;
+  transition: transform 0.24s var(--ease-out), box-shadow 0.24s var(--ease-out), filter 0.24s;
+}
+html.dark .el-button--primary:not(.is-link):not(.is-text):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--glow);
+  filter: brightness(1.08);
+}
