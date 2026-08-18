@@ -29,3 +29,6 @@ celerybeat-schedule*
 # 前端
 node_modules/
 dist/
+
+# 本地密文仓（运行时生成）
+.local_vault/
