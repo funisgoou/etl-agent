@@ -20,13 +20,13 @@ logger = structlog.get_logger(__name__)
 
 # 意图抽取结构（LLM 数值/ID 一律不可信，服务端兜底）
 class IntentDraft(BaseModel):
-    """LLM 意图抽取产物。"""
+    """LLM 意图抽取产物（字段全部可空：LLM 缺省由服务端兜底，纪律 #8）。"""
 
     source_table: str | None = None
     target_table: str | None = Field(default=None, description="Doris 目标表名，如 dwd_orders")
     file_asset_id: int | None = None
     quality_requirements: list[dict] = Field(default_factory=list)
-    data_classification: str = "internal"
+    data_classification: str | None = None
     questions: list[str] = Field(default_factory=list, description="缺失信息需要向用户确认的问题")
 
 
@@ -153,17 +153,19 @@ async def probe_metadata(state: StudioState) -> dict:
     assert session_factory is not None
     profiles: dict[str, Any] = {}
     async with session_factory() as db:
-        # 1. 源探查（mysql 表或 CSV 文件资产）
+        # 1. 源探查（mysql 表或 CSV 文件资产）；表名净化：LLM 可能带库名前缀
         if intent.get("source_conn_id"):
             conn = (await db.execute(select(Connection).where(Connection.id == intent["source_conn_id"]))).scalar_one()
+            table = (intent.get("source_table") or "").rsplit(".", 1)[-1].strip("`\" ")
+            intent["source_table"] = table  # 净化结果回写（worker 按此建查询）
             result = await CONNECTOR_REGISTRY["mysql"].profile(
-                resolve_config(conn.config_json), intent.get("source_table") or "", 50
+                resolve_config(conn.config_json), table, 50
             )
             profiles["source"] = {
                 "kind": "mysql",
                 "connection_id": conn.id,
                 "connection_name": conn.name,
-                "table": intent.get("source_table"),
+                "table": table,
                 "schema": result.schema,
                 "stats": result.stats,
             }
@@ -180,7 +182,7 @@ async def probe_metadata(state: StudioState) -> dict:
         if intent.get("target_conn_id"):
             conn = (await db.execute(select(Connection).where(Connection.id == intent["target_conn_id"]))).scalar_one()
             profiles["target"] = {"connection_id": conn.id, "connection_name": conn.name, "table": intent.get("target_table")}
-    return {"profiles": profiles, "step_trace": ["probe_metadata"]}
+    return {"profiles": profiles, "intent": intent, "step_trace": ["probe_metadata"]}
 
 
 class EtlPlanDraft(BaseModel):

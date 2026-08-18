@@ -1,12 +1,12 @@
 name: etl-agent
 
-# datalane 固定子网：doris 镜像要求 FE_SERVERS/BE_ADDR 可解析，用静态 IP（fe=172.28.1.1 / be=172.28.1.2）。
+# datalane 固定子网：doris 镜像要求 FE_SERVERS/BE_ADDR 可解析，用静态 IP（fe=172.29.1.1 / be=172.29.1.2）。
 networks:
   datalane:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.0.0/16
+        - subnet: 172.29.0.0/16
 
 services:
   # ── 控制面存储（始终启动） ──
@@ -52,10 +52,10 @@ services:
     profiles: ["datalane"]
     networks:
       datalane:
-        ipv4_address: 172.28.1.1
+        ipv4_address: 172.29.1.1
     ports: ["18030:8030", "19030:9030"]
     environment:
-      FE_SERVERS: "fe1:172.28.1.1:9010"
+      FE_SERVERS: "fe1:172.29.1.1:9010"
       FE_ID: 1
 
   doris-be:
@@ -63,12 +63,12 @@ services:
     profiles: ["datalane"]
     networks:
       datalane:
-        ipv4_address: 172.28.1.2
+        ipv4_address: 172.29.1.2
     depends_on: [doris-fe]
     ports: ["8040:8040"]
     environment:
-      FE_SERVERS: "fe1:172.28.1.1:9010"
-      BE_ADDR: "172.28.1.2:9050"
+      FE_SERVERS: "fe1:172.29.1.1:9010"
+      BE_ADDR: "172.29.1.2:9050"
     volumes:
       - dorisbe:/opt/apache-doris/be/storage
     # sed 绕过容器环境检查（vm.max_map_count 真实需求见 HANDOVER §3.5）
@@ -84,6 +84,7 @@ services:
     entrypoint: ["sh", "-c", "
       for i in $(seq 1 60); do mysql -h doris-fe -P 9030 -u root --connect-timeout=2 -e 'SELECT 1' && break || sleep 5; done;
       mysql -h doris-fe -P 9030 -u root -e \"SET PASSWORD FOR 'root' = PASSWORD('doris123')\" 2>/dev/null || true;
+      mysql -h doris-fe -P 9030 -u root -pdoris123 -e \"ALTER SYSTEM ADD BACKEND '172.29.1.2:9050'\" 2>/dev/null || true;
       mysql -h doris-fe -P 9030 -u root -pdoris123 -e 'CREATE DATABASE IF NOT EXISTS ods; CREATE DATABASE IF NOT EXISTS tmp_dry_run;';
       echo doris-init done"]
 

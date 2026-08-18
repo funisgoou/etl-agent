@@ -88,9 +88,17 @@ def build_job_json(
         query = f"SELECT {', '.join(f'`{c}`' for c in columns)} FROM `{source['table']}`"
         if sample_limit:
             query += f" LIMIT {int(sample_limit)}"
+        # §4.3 双视角：控制面配 localhost 时，引擎侧（容器）经 host-gateway 回宿主
+        url = source["url"]
+        import os
+        import re as _re
+
+        m = _re.match(r"(jdbc:mysql://)(localhost|127\.0\.0\.1)(:.+)", url)
+        if m:
+            url = m.group(1) + os.environ.get("SOURCE_HOST_ENGINE", "host.docker.internal") + m.group(3)
         source_block = {
             "plugin_name": "Jdbc",
-            "url": source["url"],
+            "url": url,
             "driver": "com.mysql.cj.jdbc.Driver",
             "user": source["user"],
             "password": source["password"],

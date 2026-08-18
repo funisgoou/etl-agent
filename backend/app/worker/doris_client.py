@@ -57,10 +57,10 @@ class Doris:
         self._check(table)
         # 1. 库级确认
         await self._run(f"CREATE DATABASE IF NOT EXISTS `{self.db}`")
-        # 2. 三槽位表（replication_num=1 单 BE 契约）
+        # 2. 三槽位表（replication_num=1 单 BE 契约；__err 仅追加错误码列与 SELECT 对齐）
         for suffix in ("__raw", "__shadow", "__err"):
             t = f"{table}{suffix}"
-            extra = ", `__error_code` VARCHAR(32) NULL, `__created_at` DATETIME NULL" if suffix == "__err" else ""
+            extra = ", `__error_code` VARCHAR(32) NULL" if suffix == "__err" else ""
             await self._run(
                 f"CREATE TABLE IF NOT EXISTS `{t}` ({columns_def}{extra}) "
                 f'DUPLICATE KEY(`id`) PROPERTIES("replication_num"="1")'

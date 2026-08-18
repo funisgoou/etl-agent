@@ -1,6 +1,12 @@
 """FastAPI 装配：lifespan 资源管理 + 路由注册 + 全局异常处理。"""
 
+import asyncio
+import sys
 from contextlib import asynccontextmanager
+
+# Windows 宿主直跑时 psycopg（PostgresSaver）需 Selector 循环；Linux 容器内默认即兼容
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import structlog
 from fastapi import FastAPI, Request

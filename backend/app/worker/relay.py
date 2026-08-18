@@ -39,7 +39,7 @@ async def relay_once() -> int:
                     # 1. 投递 Celery（JSON 载荷）
                     from app.worker.celery_app import celery_app
 
-                    celery_app.send_task(task, args=[json.dumps(ev.payload_json, ensure_ascii=False, default=str)])
+                    celery_app.send_task(task, args=[json.dumps({**ev.payload_json, 'event_type': ev.event_type}, ensure_ascii=False, default=str)])
                     # 2. 置 published
                     await outbox.mark_published(db, ev.id)
                     delivered += 1

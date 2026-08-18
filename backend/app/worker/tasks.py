@@ -42,7 +42,8 @@ async def _execute_pipeline(payload: dict) -> None:
     factory = make_session_factory()
     s = get_settings()
 
-    # 1. 会话内：验签消费 + 取版本与连接配置
+    # 1. 会话内：验签消费 + 取版本与连接配置（按事件类型验签：execute_pipeline / dry_run）
+    tool = "dry_run" if payload.get("event_type") == "dry_run" else "execute_pipeline"
     async with factory() as db:
         from sqlalchemy import select
 
@@ -60,7 +61,7 @@ async def _execute_pipeline(payload: dict) -> None:
                             project_id=payload["project_id"], subject_id=payload["operator_id"],
                             resource_scope={}, data_classification=plan.get("data_classification", "internal"),
                             params={"execution_run_id": run_id})
-        claims = await capability.verify_and_consume(db, token, "execute_pipeline", v.artifact_digest)
+        claims = await capability.verify_and_consume(db, token, tool, v.artifact_digest)
         await db.commit()
         # 源/目标连接物化（resolve_config 唯一物化点）
         src_cfg: dict = {}
@@ -102,8 +103,8 @@ async def _execute_pipeline(payload: dict) -> None:
         await _update(status="running", sub_stage="COPYING", started_at=datetime.now(UTC),
                       source_row_count=src_count)
         _publish(run_id, event="status", status="running", sub_stage="COPYING")
-        # 3. 表族就绪（dry-run 库独立，跳过 Swap）
-        cols_def = ", ".join(f"`{c}` STRING" for c in columns) or "`id` STRING"
+        # 3. 表族就绪（dry-run 库独立，跳过 Swap）；按源 profile 真实类型建表，key 列补精确类型
+        cols_def = _columns_def(plan.get("_source_columns") or [], columns)
         await doris.ensure_table_family(target_table, cols_def)
         await doris.truncate_raw(target_table)
         await doris.rebuild_shadow(target_table)
@@ -188,6 +189,21 @@ async def _execute_pipeline(payload: dict) -> None:
             r.diagnosis_json = diagnose({"error": str(exc), "sub_stage": r.sub_stage or "COPYING"})
             await db.commit()
         _publish(run_id, event="done", status="failed")
+
+
+# Doris 类型映射：key 列（id）用精确类型，其余 STRING（哑管道保真，分流期不做类型转换）
+_DORIS_KEY_TYPES = {"bigint": "BIGINT", "int": "INT", "integer": "INT", "id": "BIGINT"}
+
+
+def _columns_def(source_columns: list, columns: list[str]) -> str:
+    """列定义构造：key 列 id 用 BIGINT，其余 STRING（Doris 限制 key 列不可 STRING）。"""
+    defs = []
+    for c in columns:
+        if c == "id":
+            defs.append("`id` BIGINT")
+        else:
+            defs.append(f"`{c}` STRING")
+    return ", ".join(defs) or "`id` BIGINT"
 
 
 def _engine_doris_host() -> str:

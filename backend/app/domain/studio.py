@@ -63,14 +63,13 @@ async def _run_graph_and_persist(run_id: int, thread_id: str, init_state: dict) 
     from app.core.db import make_session_factory
 
     factory = make_session_factory()  # 独立事件循环专用（后台任务）
-    graph = get_graph()
     try:
         async with get_checkpointer() as cp:
             await cp.setup()
+            graph = get_graph(cp)
             config = {"configurable": {"thread_id": thread_id}}
             result = await graph.ainvoke(init_state, config=config)
             # 1. interrupt 检测
-            snaps = await graph.aget_state(config, checkpoint=  None) if False else None
             state_snapshot = await graph.aget_state(config)
             interrupt_info = state_snapshot.next  # 非空 = 挂起在 interrupt
             status = "running"
@@ -216,10 +215,10 @@ async def _resume_graph_and_persist(run_id: int, thread_id: str, answer: dict, v
     from app.core.db import make_session_factory
 
     factory = make_session_factory()
-    graph = get_graph()
     try:
         async with get_checkpointer() as cp:
             await cp.setup()
+            graph = get_graph(cp)
             config = {"configurable": {"thread_id": thread_id}}
             result = await graph.ainvoke(Command(resume=answer), config=config)
             state_snapshot = await graph.aget_state(config)

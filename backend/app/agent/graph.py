@@ -17,7 +17,7 @@ from app.agent.state import StudioState
 
 logger = structlog.get_logger(__name__)
 
-_compiled = None  # 编译缓存（图无状态可复用；checkpointer 每次用连接串新建）
+_compiled: dict = {}  # 编译缓存：按 checkpointer 身份区分（None / 实例）
 
 
 def new_thread_id(version_id: int) -> str:
@@ -42,8 +42,8 @@ def gate_route(state: StudioState) -> Literal["repair", "end_ok"]:
     return "repair"
 
 
-def build_graph():
-    """构建并编译状态图。"""
+def build_graph(checkpointer=None):
+    """构建并编译状态图（checkpointer 由调用方注入以支持 interrupt 恢复）。"""
     g = StateGraph(StudioState)
     g.add_node("parse_intent", nodes.parse_intent)
     g.add_node("clarify", nodes.clarify)
@@ -62,19 +62,26 @@ def build_graph():
     g.add_edge("generate", "gate")
     g.add_conditional_edges("gate", gate_route, {"repair": "repair", "end_ok": END})
     g.add_edge("repair", "gate")
-    return g.compile()
+    return g.compile(checkpointer=checkpointer)
 
 
-def get_graph():
-    """编译缓存。"""
-    global _compiled
-    if _compiled is None:
-        _compiled = build_graph()
-    return _compiled
+def get_graph(checkpointer=None):
+    """编译缓存；interrupt 需要持久化时传入 checkpointer（每次调用方自管生命周期）。
+
+    带 checkpointer 的图按 id 缓存本次调用的实例；跨连接复用由调用方重建。
+    """
+    key = None if checkpointer is None else id(checkpointer)
+    if key not in _compiled:
+        _compiled[key] = build_graph(checkpointer)
+    return _compiled[key]
 
 
 def get_checkpointer():
-    """PostgresSaver 工厂：每调用方自管生命周期（async with）。"""
+    """PostgresSaver 工厂：每调用方自管生命周期（async with）。
+
+    SQLAlchemy URL 的 +asyncpg 后缀需剥掉（psycopg DSN 不认）。
+    """
     from app.core.config import get_settings
 
-    return AsyncPostgresSaver.from_conn_string(get_settings().database_url)
+    dsn = get_settings().database_url.replace("postgresql+asyncpg://", "postgresql://")
+    return AsyncPostgresSaver.from_conn_string(dsn)
