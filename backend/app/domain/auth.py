@@ -40,6 +40,9 @@ class UserOut(BaseModel):
     display_name: str
     email: str | None
     status: str
+    # 前端演示字段：全部项目成员角色与职责槽资格
+    roles: list[str] = []
+    role_slots: list[str] = []
 
 
 class LoginOut(BaseModel):
@@ -82,12 +85,28 @@ async def login(body: LoginIn, db: AsyncSession = Depends(get_session)) -> Login
     ).scalar_one_or_none()
     if u is None or u.status != "active" or not security.verify_password(body.password, u.password_hash):
         raise ApiError("E_AUTH_INVALID_CREDENTIALS", "用户名或密码错误")
-    # 2. 写会话
+    # 2. 聚合角色（前端 User.roles/role_slots：全部项目成员角色与职责槽资格）
+    from app.db_model import ProjectMembership, ProjectRoleGrant
+
+    roles = (
+        await db.execute(
+            select(ProjectMembership.role).where(ProjectMembership.user_id == u.id)
+        )
+    ).scalars().all()
+    role_slots = (
+        await db.execute(
+            select(ProjectRoleGrant.role_slot).where(ProjectRoleGrant.user_id == u.id)
+        )
+    ).scalars().all()
+    # 3. 写会话
     token = security.new_session_token()
     expires = datetime.now(UTC) + timedelta(days=SESSION_TTL_DAYS)
     db.add(SessionRow(token_digest=security.token_digest(token), user_id=u.id, expires_at=expires))
     await db.commit()
-    return LoginOut(token=token, expires_at=expires, user=_user_out(u))
+    out = _user_out(u)
+    out.roles = sorted(set(roles))
+    out.role_slots = sorted(set(role_slots))
+    return LoginOut(token=token, expires_at=expires, user=out)
 
 
 @router.post("/logout", status_code=204)

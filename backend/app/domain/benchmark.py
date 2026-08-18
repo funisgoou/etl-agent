@@ -148,11 +148,14 @@ async def get_run(
 
 @router.get("/runs")
 async def list_runs(
-    page: int = 1, page_size: int = 20,
+    page: int = 1, page_size: int = 20, limit: int | None = None,
     user=Depends(security.current_user), db: AsyncSession = Depends(get_session),
-) -> dict:
+) -> list[dict]:
+    """评测历史列表（前端治理页趋势图；limit 兼容前端参数，走 Page 时前端自行截取）。"""
+    if limit:
+        page_size = min(int(limit), 100)
     rows = (await db.execute(select(BenchmarkRun).order_by(BenchmarkRun.id.desc())
                              .offset((page - 1) * page_size).limit(page_size))).scalars().all()
-    return {"items": [{"id": r.id, "suite_version": r.suite_version, "status": r.status,
-                       "metrics_json": r.metrics_json, "finished_at": r.finished_at} for r in rows],
-            "total": len(rows), "page": page, "page_size": page_size}
+    return [{"id": r.id, "suite_version": r.suite_version, "status": r.status,
+             "metrics_json": r.metrics_json, "started_at": r.started_at, "finished_at": r.finished_at}
+            for r in rows]

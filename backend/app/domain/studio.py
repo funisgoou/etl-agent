@@ -165,18 +165,45 @@ async def get_run(
     v, project_id = await _version_ctx(db, run.version_id)
     await security.require_member(project_id)(user, db)
     pq = run.pending_question_json
-    # waiting_input 时给出单字段表单形态（前端 schema 驱动渲染）
+    # waiting_input 时输出前端 schema 驱动表单（{message, fields:[{key,label,type,value,required}]}）
     pending_question = None
     if run.status == "waiting_input" and pq:
         fields = pq.get("missing", [])
         questions = pq.get("questions", {})
-        pending_question = {
-            "fields": fields,
-            "message": "；".join(questions.get(f, f"请补充 {f}") for f in fields),
-        }
-    return {"run_id": run.id, "version_id": run.version_id, "status": run.status,
-            "step_count": run.step_count, "error_message": run.error_message,
+        LABELS = {"target_table": "目标 Doris 表名", "source_table": "源表名"}
+        form_fields = [
+            {
+                "key": f,
+                "label": LABELS.get(f, f),
+                "type": "text",
+                "required": True,
+                **({"value": "dwd_orders"} if f == "target_table" else {}),
+            }
+            for f in fields
+            if f in ("target_table", "source_table")  # 系统级缺失（连接不存在）不进表单
+        ]
+        if form_fields:
+            pending_question = {
+                "message": "；".join(questions.get(f, f"请补充 {f}") for f in fields),
+                "fields": form_fields,
+            }
+    return {"run_id": run.id, "version_id": run.version_id, "thread_id": run.thread_id,
+            "status": run.status, "step_count": run.step_count,
+            "steps": _steps_timeline(run.status, run.step_count or 0),
+            "error_message": run.error_message,
             "pending_question": pending_question}
+
+
+def _steps_timeline(status: str, step_count: int) -> list[dict]:
+    """四步时间线：意图解析→元数据探查→生成配置→门禁校验（前端 AgentRunStep 契约）。"""
+    names = ["意图解析", "元数据探查", "生成配置", "门禁校验"]
+    reached = min(step_count, 4) if status != "waiting_input" else min(step_count, 2)
+    if status == "succeeded":
+        return [{"name": n, "status": "done"} for n in names]
+    return [
+        {"name": n, "status": "done" if i < reached else ("running" if i == reached and status == "running" else "pending")}
+        for i, n in enumerate(names)
+    ]
 
 
 @router.post("/agent-runs/{run_id}/answers", status_code=202)

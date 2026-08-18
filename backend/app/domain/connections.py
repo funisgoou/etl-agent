@@ -24,6 +24,10 @@ class ConnectionIn(BaseModel):
     config_json: dict
 
 
+# 前端状态枚举（connected/unreachable/unknown）← 内部状态（active/error）
+_STATUS_MAP = {"active": "connected", "error": "unreachable"}
+
+
 def _conn_out(c: Connection) -> dict:
     return {
         "id": c.id,
@@ -31,8 +35,9 @@ def _conn_out(c: Connection) -> dict:
         "name": c.name,
         "conn_type": c.conn_type,
         "config_json": mask_config(c.config_json),
-        "status": c.status,
+        "status": _STATUS_MAP.get(c.status, "unknown"),
         "created_at": c.created_at,
+        "updated_at": c.updated_at,
     }
 
 

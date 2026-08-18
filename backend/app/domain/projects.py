@@ -189,7 +189,8 @@ async def list_members(
         )
     ).all()
     return [
-        {"user_id": m.user_id, "username": uname, "display_name": dname, "role": m.role}
+        {"user_id": m.user_id, "username": uname, "display_name": dname, "role": m.role,
+         "joined_at": m.created_at}
         for m, uname, dname in rows
     ]
 
@@ -231,12 +232,14 @@ async def list_grants(
     await require_admin(project_id, user, db)
     rows = (
         await db.execute(
-            select(ProjectRoleGrant, User.username)
+            select(ProjectRoleGrant, User.username, User.display_name)
             .join(User, User.id == ProjectRoleGrant.user_id)
             .where(ProjectRoleGrant.project_id == project_id)
             .order_by(ProjectRoleGrant.id)
         )
     ).all()
     return [
-        {"user_id": g.user_id, "username": uname, "role_slot": g.role_slot} for g, uname in rows
+        {"id": g.id, "project_id": g.project_id, "user_id": g.user_id, "username": uname,
+         "display_name": dname, "role_slot": g.role_slot, "granted_at": g.created_at}
+        for g, uname, dname in rows
     ]

@@ -52,14 +52,26 @@ def _run_out(run: ExecutionRun) -> dict:
     }
 
 
+async def _run_out_with_pipeline(db: AsyncSession, run: ExecutionRun) -> dict:
+    """带 pipeline 展示字段的输出（前端列表/详情联表）。"""
+    out = _run_out(run)
+    v = (await db.execute(select(PipelineVersion).where(PipelineVersion.id == run.version_id))).scalar_one_or_none()
+    if v is not None:
+        p = (await db.execute(select(Pipeline).where(Pipeline.id == v.pipeline_id))).scalar_one_or_none()
+        out["pipeline_id"] = v.pipeline_id
+        out["pipeline_name"] = p.name if p else None
+        out["version_number"] = v.version_number
+    return out
+
+
 @router.get("/execution-runs/{run_id}")
 async def get_run(
     run_id: int, user=Depends(security.current_user), db: AsyncSession = Depends(get_session)
 ) -> dict:
-    """执行状态 + 指标 + 质量报告。"""
+    """执行状态 + 指标 + 质量报告（含 pipeline 展示字段）。"""
     run, project_id = await _run_and_project(db, run_id)
     await security.require_member(project_id)(user, db)
-    return _run_out(run)
+    return await _run_out_with_pipeline(db, run)
 
 
 @router.get("/projects/{project_id}/execution-runs")
@@ -80,7 +92,8 @@ async def list_runs(
         q = q.where(ExecutionRun.status == status)
     rows = (await db.execute(q.order_by(ExecutionRun.id.desc()).offset((page - 1) * page_size).limit(page_size))).scalars().all()
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
-    return {"items": [_run_out(r) for r in rows], "total": total, "page": page, "page_size": page_size}
+    items = [await _run_out_with_pipeline(db, r) for r in rows]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/execution-runs/{run_id}/stream")

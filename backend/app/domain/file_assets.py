@@ -98,18 +98,54 @@ async def upload_csv(
 @router.get("/projects/{project_id}/file-assets")
 async def list_assets(
     project_id: int,
+    page: int = 1,
+    page_size: int = 20,
     user=Depends(security.current_user),
     db: AsyncSession = Depends(get_session),
-) -> list[dict]:
-    """项目文件资产列表。"""
+) -> dict:
+    """项目文件资产列表（Page 信封）。"""
+    from sqlalchemy import func
+
     await security.require_member(project_id)(user, db)
+    q = select(FileAsset).where(FileAsset.project_id == project_id)
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     rows = (
-        await db.execute(select(FileAsset).where(FileAsset.project_id == project_id).order_by(FileAsset.id.desc()))
+        await db.execute(q.order_by(FileAsset.id.desc()).offset((page - 1) * page_size).limit(page_size))
     ).scalars().all()
-    return [
-        {
-            "id": a.id, "file_name": a.file_name, "file_path": a.file_path,
-            "file_size": a.file_size, "file_format": a.file_format, "schema_json": a.schema_json,
-        }
-        for a in rows
-    ]
+    return {
+        "items": [
+            {
+                "id": a.id, "file_name": a.file_name, "file_path": a.file_path,
+                "file_size": a.file_size, "file_format": a.file_format, "schema_json": a.schema_json,
+                "created_at": a.created_at,
+            }
+            for a in rows
+        ],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
+@router.delete("/file-assets/{asset_id}", status_code=204)
+async def remove_asset(
+    asset_id: int,
+    user=Depends(security.current_user),
+    db: AsyncSession = Depends(get_session),
+) -> None:
+    """删除文件资产：MinIO 对象 + DB 行（engineer 权限）。"""
+    from app.core.errors import ApiError
+    from app.domain.connections import _require_engineer
+
+    asset = (await db.execute(select(FileAsset).where(FileAsset.id == asset_id))).scalar_one_or_none()
+    if asset is None:
+        raise ApiError("E_NOT_FOUND", f"文件资产不存在: {asset_id}")
+    await _require_engineer(asset.project_id, user, db)
+    # 1. MinIO 对象删除（s3a://bucket/key → bucket/key）
+    path = asset.file_path.replace("s3a://", "")
+    bucket, _, key = path.partition("/")
+    try:
+        minio_client().remove_object(bucket, key)
+    except Exception:  # noqa: BLE001
+        pass  # 对象可能已不存在；DB 行仍删除
+    # 2. DB 删除
+    await db.delete(asset)
+    await db.commit()

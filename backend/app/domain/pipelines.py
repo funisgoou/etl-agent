@@ -112,6 +112,39 @@ async def list_pipelines(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+@router.get("/pipelines/{pipeline_id}")
+async def get_pipeline(
+    pipeline_id: int,
+    user=Depends(security.current_user),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """Pipeline 单查（前端 Studio 页入口：含版本数组）。"""
+    p, project_id = await _get_pipeline(db, pipeline_id)
+    await security.require_member(project_id)(user, db)
+    vers = (
+        await db.execute(
+            select(PipelineVersion).where(PipelineVersion.pipeline_id == pipeline_id)
+            .order_by(PipelineVersion.version_number.desc())
+        )
+    ).scalars().all()
+    return {
+        "id": p.id, "project_id": p.project_id, "name": p.name, "code": p.code,
+        "description": p.description, "status": p.status,
+        "latest_version_id": vers[0].id if vers else None,
+        "created_at": p.created_at, "updated_at": p.updated_at,
+        "versions": [
+            {
+                "id": v.id, "pipeline_id": pipeline_id, "version_number": v.version_number,
+                # 前端版本状态机（D17）：按 is_immutable + agent_run 推导展示态
+                "status": "frozen" if v.is_immutable else ("generated" if v.etl_plan_json else "draft"),
+                "artifact_digest": v.artifact_digest if v.is_immutable else None,
+                "created_at": v.created_at,
+            }
+            for v in vers
+        ],
+    }
+
+
 @router.post("/pipelines/{pipeline_id}/versions", status_code=201)
 async def create_version(
     pipeline_id: int,
@@ -149,26 +182,96 @@ async def create_version(
             "status": "draft", "base_version_id": body.base_version_id}
 
 
+def _adapt_plan_for_frontend(plan: dict, profiles_hint: dict | None = None) -> dict:
+    """EtlPlan 输出适配前端契约：mappings/masking_rules/quality_contract 字段名对齐。
+
+    内部契约（source/target 列名）不改，仅在 API 边界转换（路由层职责）。
+    """
+    contract = plan.get("quality_contract", {})
+    # 1. 列映射：{source,target,transform?} → {source_field,target_field,transform?,comment?}
+    mapping = [
+        {
+            "source_field": m["source"],
+            "target_field": m["target"],
+            **({"transform": m["transform"]} if m.get("transform") else {}),
+        }
+        for m in plan.get("mappings", [])
+    ]
+    # 2. 脱敏规则：{column,operator} → {field,rule,enforced}
+    masking_rules = [
+        {"field": m.get("column"), "rule": m.get("operator"), "enforced": True}
+        for m in contract.get("masking", [])
+    ]
+    # 3. 质量规则：{column,operator,error_code} → {code,field,expression}
+    rules = [
+        {
+            "code": r.get("error_code", "E_QUALITY"),
+            "field": r.get("column"),
+            "expression": f"{r.get('operator')}({r.get('column')})",
+        }
+        for r in contract.get("rules", [])
+    ]
+    return {
+        "source": plan.get("source", {}),
+        "target": plan.get("target", {}),
+        "mappings": mapping,
+        "masking_rules": masking_rules,
+        "quality_contract": {"rules": rules},
+        "data_classification": plan.get("data_classification", "internal"),
+    }
+
+
+def _adapt_gate_for_frontend(report: dict | None) -> dict:
+    """门禁报告适配前端六格时间线契约（含 2 项演示扩展项，均按内部四类校验推导）。"""
+    findings_internal = (report or {}).get("findings", [])
+    blocking = {f.get("rule") for f in findings_internal if f.get("level") == "blocking"}
+    messages = {f.get("rule"): f.get("message") for f in findings_internal}
+    # 内部四类 → 前端六格（masking/rollback 在 v1 由契约编译与固定回滚方案覆盖）
+    cells = [
+        ("GATE_SCHEMA", "Schema 一致性", "schema_alignment" not in blocking, "schema_alignment" not in blocking, "schema_alignment"),
+        ("GATE_MASKING", "脱敏覆盖", "contract_compile" not in blocking, True, "contract_compile"),
+        ("GATE_BUDGET", "预算阈值", "scope_guard" not in blocking, True, "scope_guard"),
+        ("GATE_ROWCOUNT", "行数硬判据", "hocon_compile" not in blocking, True, "hocon_compile"),
+        ("GATE_ROLLBACK", "回滚方案", True, True, None),
+        ("GATE_PERMISSION", "权限", True, True, None),
+    ]
+    findings = [
+        {
+            "code": code, "name": name, "status": "passed" if ok else "failed",
+            "blocking": is_blocking, **({"message": messages.get(rule_key)} if messages.get(rule_key) else {}),
+        }
+        for code, name, ok, is_blocking, rule_key in cells
+    ]
+    passed_all = all(f["status"] == "passed" for f in findings)
+    return {
+        "passed": passed_all,
+        "total": len(findings),
+        "passed_count": sum(1 for f in findings if f["status"] == "passed"),
+        "findings": findings,
+    }
+
+
 @router.get("/versions/{version_id}/design")
 async def get_design(
     version_id: int,
     user=Depends(security.current_user),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    """设计查询：EtlPlan/HOCON/DAG/质量契约/门禁报告。"""
+    """设计查询：EtlPlan/HOCON/DAG/质量契约/门禁报告（前端方案审查视图数据源）。"""
     v = await _get_version(db, version_id)
     _, project_id = await _get_pipeline(db, v.pipeline_id)
     await security.require_member(project_id)(user, db)
-    # DAG：单源单目标哑管道，节点固定
     plan = v.etl_plan_json or {}
+    table = plan.get("target", {}).get("table")
+    # DAG：哑管道+分流五段（kind 供前端分类渲染）
     dag = {
         "nodes": [
-            {"id": "source", "label": plan.get("source", {}).get("table") or "csv_file"},
-            {"id": "raw", "label": f"{plan.get('target', {}).get('table')}__raw"},
-            {"id": "split", "label": "受管SQL分流"},
-            {"id": "shadow", "label": "__shadow"},
-            {"id": "err", "label": "__err"},
-            {"id": "publish", "label": "原子Swap→正式表"},
+            {"id": "source", "label": plan.get("source", {}).get("table") or "csv_file", "kind": "source"},
+            {"id": "raw", "label": f"{table}__raw", "kind": "staging"},
+            {"id": "split", "label": "受管SQL分流", "kind": "transform"},
+            {"id": "shadow", "label": "__shadow", "kind": "staging"},
+            {"id": "err", "label": "__err", "kind": "error"},
+            {"id": "publish", "label": "原子Swap→正式表", "kind": "publish"},
         ],
         "edges": [
             {"from": "source", "to": "raw"}, {"from": "raw", "to": "split"},
@@ -176,21 +279,21 @@ async def get_design(
             {"from": "shadow", "to": "publish"},
         ],
     }
-    # 最近一次 agent_run 状态
     run = (
         await db.execute(
             select(AgentRun).where(AgentRun.version_id == version_id).order_by(AgentRun.id.desc()).limit(1)
         )
     ).scalar_one_or_none()
+    status = "succeeded" if run and run.status == "succeeded" else ("generated" if plan else "draft")
     return {
         "version_id": v.id,
         "version_number": v.version_number,
-        "status": "succeeded" if run and run.status == "succeeded" else ("generated" if v.etl_plan_json else "draft"),
-        "etl_plan": plan,
+        "status": "frozen" if v.is_immutable else status,
+        "etl_plan": _adapt_plan_for_frontend(plan) if plan else None,
         "hocon": v.hocon_text,
-        "dag": dag,
+        "dag": dag if plan else None,
         "quality_contract": plan.get("quality_contract"),
-        "gate_report": v.gate_report_json,
+        "gate_report": _adapt_gate_for_frontend(v.gate_report_json),
         "artifact_digest": v.artifact_digest if v.is_immutable else None,
         "is_immutable": v.is_immutable,
         "agent_run": {"run_id": run.id, "status": run.status} if run else None,

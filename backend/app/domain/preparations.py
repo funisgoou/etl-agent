@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 import structlog
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.core.security as security
@@ -275,25 +275,70 @@ async def get_preparation(
     user=Depends(security.current_user),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
-    """准备单详情（含审批状态）。"""
+    """准备单详情（含审批状态与展示字段）。"""
     prep = (await db.execute(select(Preparation).where(Preparation.id == preparation_id))).scalar_one_or_none()
     if prep is None:
         raise ApiError("E_NOT_FOUND", f"准备单不存在: {preparation_id}")
-    _, project_id = await _version_and_project(db, prep.version_id)
+    v, project_id = await _version_and_project(db, prep.version_id)
     await security.require_member(project_id)(user, db)
+    from app.db_model import User
+
+    maker = (await db.execute(select(User).where(User.id == prep.maker_id))).scalar_one_or_none()
     reqs = (await db.execute(
         select(ApprovalRequest).where(ApprovalRequest.preparation_id == preparation_id)
     )).scalars().all()
     return {
-        "id": prep.id, "version_id": prep.version_id, "maker_id": prep.maker_id,
+        "id": prep.id, "code": f"PR-{prep.id:03d}", "version_id": prep.version_id,
+        "pipeline_id": v.pipeline_id, "maker_id": prep.maker_id,
+        "maker_name": maker.display_name if maker else None,
         "status": prep.status, "expires_at": prep.expires_at,
         "input_fingerprint": prep.input_fingerprint, "resource_scope": prep.resource_scope,
         "impact_json": prep.impact_json, "data_classification": prep.data_classification,
         "budget_json": prep.budget_json, "rollback_plan_json": prep.rollback_plan_json,
-        "risk_level": prep.risk_level,
+        "risk_level": prep.risk_level, "created_at": prep.created_at,
         "approval_requests": [
             {"id": r.id, "required_role": r.required_role, "status": r.status,
              "decision": r.decision, "approver_id": r.approver_id, "decided_at": r.decided_at}
             for r in reqs
         ],
     }
+
+
+@router.get("/projects/{project_id}/preparations")
+async def list_preparations(
+    project_id: int,
+    status: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    user=Depends(security.current_user),
+    db: AsyncSession = Depends(get_session),
+) -> dict:
+    """项目准备单列表（前端运行中心/审批视图）。"""
+    from app.db_model import PipelineVersion
+
+    await security.require_member(project_id)(user, db)
+    pipe_ids = select(Pipeline.id).where(Pipeline.project_id == project_id)
+    q = select(Preparation).where(
+        Preparation.version_id.in_(select(PipelineVersion.id).where(PipelineVersion.pipeline_id.in_(pipe_ids)))
+    )
+    if status:
+        q = q.where(Preparation.status == status)
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    rows = (await db.execute(q.order_by(Preparation.id.desc()).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    items = []
+    for prep in rows:
+        reqs = (await db.execute(
+            select(ApprovalRequest).where(ApprovalRequest.preparation_id == prep.id)
+        )).scalars().all()
+        items.append({
+            "id": prep.id, "code": f"PR-{prep.id:03d}", "version_id": prep.version_id,
+            "maker_id": prep.maker_id, "status": prep.status, "expires_at": prep.expires_at,
+            "risk_level": prep.risk_level, "data_classification": prep.data_classification,
+            "created_at": prep.created_at,
+            "approval_requests": [
+                {"id": r.id, "required_role": r.required_role, "status": r.status,
+                 "decision": r.decision, "approver_id": r.approver_id, "decided_at": r.decided_at}
+                for r in reqs
+            ],
+        })
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
