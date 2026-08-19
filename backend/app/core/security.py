@@ -55,12 +55,18 @@ def token_digest(token: str) -> str:
 
 
 async def current_user(request: Request, db: AsyncSession = Depends(get_session)) -> User:
-    """鉴权依赖：Authorization: Bearer <token> → 校验会话未吊销未过期 → 返回用户。"""
-    # 1. 解析令牌
+    """鉴权依赖：Authorization: Bearer <token> → 校验会话未吊销未过期 → 返回用户。
+
+    SSE 场景原生 EventSource 无法携带自定义头，回退读 ?token= 查询参数。
+    """
+    # 1. 解析令牌（头优先，查询参数兜底——EventSource 专用通道）
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
+    if auth.startswith("Bearer "):
+        token = auth.removeprefix("Bearer ")
+    else:
+        token = request.query_params.get("token", "")
+    if not token:
         raise ApiError("E_AUTH_UNAUTHORIZED", "缺少会话令牌")
-    token = auth.removeprefix("Bearer ")
     # 2. 查会话（未吊销 + 未过期）
     row = (
         await db.execute(

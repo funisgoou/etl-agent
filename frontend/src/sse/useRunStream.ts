@@ -5,6 +5,7 @@
  */
 import { onBeforeUnmount, reactive, ref, watch, type Ref } from 'vue'
 import { createEventSource } from '@/mock'
+import { getToken } from '@/api/client'
 import type { RunStatus, SubStage } from '@/api'
 
 export interface SupervisionEvent {
@@ -65,7 +66,9 @@ export function useRunStream(runId: Ref<number | string | null>) {
     close()
     state.done = null
     state.error = null
-    es = createEventSource(`/api/v1/execution-runs/${id}/stream`)
+    // 原生 EventSource 无法携带 Authorization 头，token 走查询参数（后端 SSE 鉴权兜底）
+    const tk = getToken()
+    es = createEventSource(`/api/v1/execution-runs/${id}/stream${tk ? `?token=${encodeURIComponent(tk)}` : ''}`)
 
     es.addEventListener('status', (evt) => {
       const d = parse<{ status: RunStatus; sub_stage?: SubStage; input_records?: number; output_records?: number; error_records?: number }>(evt as MessageEvent)
