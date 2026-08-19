@@ -30,7 +30,16 @@
           </p>
           <div class="prep-card__foot">
             <a class="prep-card__detail" @click="openApproval(p, true)">查看详情 ›</a>
-            <el-button type="primary" size="small" @click="openApproval(p)">审批</el-button>
+            <el-tooltip
+              v-if="listDenyReason(p)"
+              :content="listDenyReason(p)"
+              placement="top"
+            >
+              <span>
+                <el-button type="primary" size="small" disabled>审批</el-button>
+              </span>
+            </el-tooltip>
+            <el-button v-else type="primary" size="small" @click="openApproval(p)">审批</el-button>
           </div>
         </div>
       </div>
@@ -164,8 +173,17 @@
       <template #footer>
         <span class="apv__footer-note">提交需二次确认</span>
         <el-button @click="approvalDialog = false">取消</el-button>
+        <el-tooltip
+          v-if="approvalDenyReason && activePrep?.status !== 'approved'"
+          :content="approvalDenyReason"
+          placement="top"
+        >
+          <span>
+            <el-button type="primary" disabled>确认提交审批</el-button>
+          </span>
+        </el-tooltip>
         <el-button
-          v-if="activePrep?.status === 'approved'"
+          v-else-if="activePrep?.status === 'approved'"
           type="success"
           :loading="committing"
           @click="doCommit"
@@ -350,6 +368,37 @@ const activeSlot = computed<'checker1' | 'checker2' | null>(() => {
   if (!a) return null
   return a.required_role === 'checker2' ? 'checker2' : 'checker1'
 })
+
+/**
+ * 当前用户对 activeSlot 的审批资格预判（与服务端 D3 判定同口径）：
+ * - 需持有该职责槽资格（role_slots）
+ * - 禁止自批（maker_id 不能是自己）
+ * - 槽间互斥（另一槽已由自己决策则不可再审）
+ * 无资格时按钮置灰并提示原因；服务端仍是最终防线。
+ */
+const approvalDenyReason = computed<string | null>(() => {
+  const p = activePrep.value
+  const slot = activeSlot.value
+  if (!p || !slot) return null
+  if (!authStore.roleSlots.includes(slot)) return `你缺少 ${slot} 职责槽资格（D3 四眼职责分离）`
+  if (p.maker_id === authStore.user?.id) return '你是本单申请人，禁止自批（D3）'
+  const other = p.approval_requests.find((a) => a.required_role !== slot && a.approver_id === authStore.user?.id)
+  if (other) return `你已占用 ${other.required_role} 职责槽，同单不可兼任（D3）`
+  return null
+})
+
+/** 列表卡片入口的资格预判（与弹窗同口径；首个 pending 槽为准）。 */
+function listDenyReason(p: Preparation): string | null {
+  const pending = p.approval_requests.find((a) => a.status === 'pending')
+  if (!pending) return null
+  if (!authStore.roleSlots.includes(pending.required_role)) return `你缺少 ${pending.required_role} 职责槽资格（D3）`
+  if (p.maker_id === authStore.user?.id) return '你是本单申请人，禁止自批（D3）'
+  const other = p.approval_requests.find(
+    (a) => a.required_role !== pending.required_role && a.approver_id === authStore.user?.id,
+  )
+  if (other) return `你已占用 ${other.required_role} 职责槽，同单不可兼任（D3）`
+  return null
+}
 
 const checker1Done = computed(() => {
   const c1 = activePrep.value?.approval_requests.find((a) => a.required_role === 'checker1')
