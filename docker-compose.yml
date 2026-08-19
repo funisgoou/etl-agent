@@ -16,7 +16,7 @@ services:
       POSTGRES_USER: etl
       POSTGRES_PASSWORD: etl
       POSTGRES_DB: etlagent
-    ports: ["5432:5432"]
+    ports: ["15432:5432"]  # 宿主 15432：避开 Hyper-V 动态保留区间（5358-5457 等），重启后不再撞端口
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U etl"]
@@ -42,7 +42,7 @@ services:
       MYSQL_DATABASE: biz_demo
       MYSQL_USER: etl_reader
       MYSQL_PASSWORD: reader123
-    ports: ["3307:3306"]
+    ports: ["13307:3306"]  # 宿主 13307：避开 Hyper-V 保留区间 3307-3406
     volumes:
       - ./deploy/mysql-init:/docker-entrypoint-initdb.d:ro
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
@@ -82,7 +82,11 @@ services:
     depends_on: [doris-fe]
     restart: "no"
     entrypoint: ["sh", "-c", "
-      for i in $(seq 1 60); do mysql -h doris-fe -P 9030 -u root --connect-timeout=2 -e 'SELECT 1' && break || sleep 5; done;
+      for i in $(seq 1 60); do
+        mysql -h doris-fe -P 9030 -u root --connect-timeout=2 -e 'SELECT 1' 2>/dev/null && break;
+        mysql -h doris-fe -P 9030 -u root -pdoris123 --connect-timeout=2 -e 'SELECT 1' 2>/dev/null && break;
+        sleep 5;
+      done;
       mysql -h doris-fe -P 9030 -u root -e \"SET PASSWORD FOR 'root' = PASSWORD('doris123')\" 2>/dev/null || true;
       mysql -h doris-fe -P 9030 -u root -pdoris123 -e \"ALTER SYSTEM ADD BACKEND '172.29.1.2:9050'\" 2>/dev/null || true;
       mysql -h doris-fe -P 9030 -u root -pdoris123 -e 'CREATE DATABASE IF NOT EXISTS ods; CREATE DATABASE IF NOT EXISTS tmp_dry_run;';

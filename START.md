@@ -95,3 +95,14 @@ VITE_MOCK=false npm run dev -- --port 5173 --strictPort
 
 - 四个终端各自 Ctrl+C
 - 容器：`docker compose --profile datalane --profile control stop`（或 `down`；`down -v` 会清库慎用）
+
+## 端口备忘（Hyper-V 保留区间规避）
+
+宿主端口已固定为：**15432**(postgres) / **13307**(mysql-src) / 其余不变（5801/18030/19030/9000/8040/6379/8000/5173）。
+若再遇 `ports are not available ... access permissions`，用 `netsh interface ipv4 show excludedportrange protocol=tcp`
+查保留区间后改 compose 宿主端口（容器内端口不动，库内连接配置用容器名互访不受影响）。
+
+> 注意：库里 gen1 项目登记的 `localhost:3307` 连接在宿主端口迁移后探查/测试会失败——
+> 在前端编辑该连接把端口改为 **13307**，或用 seed 账号（maker）的预置连接（容器名互访，不受影响）。
+
+> backend/.env 的 DATABASE_URL 已指向 15432；`docker compose down -v` 清库后需重跑迁移+种子。
