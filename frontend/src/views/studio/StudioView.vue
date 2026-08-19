@@ -743,10 +743,15 @@ onBeforeUnmount(stopPoll)
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- 设计中栏 ---------- */
-.studio__design { min-height: calc(100vh - 210px); display: flex; flex-direction: column; }
+.studio__design {
+  height: calc(100vh - 210px);
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+}
 .studio__tabs { padding: 0 20px; }
 .studio__design-empty { padding: 40px 0; flex: 1; }
-.design { padding: 18px 20px; flex: 1; }
+.design { padding: 18px 20px; flex: 1; overflow-y: auto; }
 .design__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .design__h { font-size: 15px; }
 .design__sub-h { margin: 22px 0 12px; font-size: 13.5px; color: var(--txt-0); }

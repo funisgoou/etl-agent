@@ -41,6 +41,8 @@ withDefaults(
 }
 .glass-panel.is-strong { background: var(--panel-strong); }
 
+.glass-panel__body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
 .glass-panel__head {
   display: flex;
   align-items: center;
