@@ -25,6 +25,13 @@ class ConnectionIn(BaseModel):
     config_json: dict
 
 
+class ConnectionUpdateIn(BaseModel):
+    """编辑连接（API 5 PUT）：按文档只传 name/config_json，conn_type 不可变更。"""
+
+    name: str = Field(min_length=1, max_length=128)
+    config_json: dict
+
+
 # 前端状态枚举（connected/unreachable/unknown）← 内部状态（active/error）
 _STATUS_MAP = {"active": "connected", "error": "unreachable"}
 
@@ -134,7 +141,7 @@ async def _require_engineer(project_id: int, user, db) -> None:
 @router.put("/connections/{conn_id}")
 async def update_connection(
     conn_id: int,
-    body: ConnectionIn,
+    body: ConnectionUpdateIn,
     user=Depends(security.current_user),
     db: AsyncSession = Depends(get_session),
 ) -> dict:
