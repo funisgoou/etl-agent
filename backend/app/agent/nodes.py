@@ -39,6 +39,17 @@ INTENT_SYSTEM = (
 )
 
 
+import re as _re
+
+_IDENT = _re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _sanitize_table(name: str | None) -> str | None:
+    """表名净化：去库名前缀/反引号；非合法 SQL 标识符（如中文"客户表"）返回 None。"""
+    cleaned = (name or "").rsplit(".", 1)[-1].strip("`\" ")
+    return cleaned if _IDENT.match(cleaned) else None
+
+
 async def parse_intent(state: StudioState) -> dict:
     """意图解析：LLM 抽取 + 服务端补全连接 ID 与缺参判定。"""
     # 1. 服务端事实：项目内候选连接与文件资产（LLM 不猜 ID）
@@ -81,11 +92,11 @@ async def parse_intent(state: StudioState) -> dict:
     tgt = next((c for c in conns if c.conn_type == "doris"), None)
     intent: IntentSpec = {
         "source_conn_id": src.id if src else None,
-        "source_table": draft.source_table,
+        # 表名净化：LLM 可能给中文别名/库名前缀（"客户表"/"biz_demo.orders"），非合法标识符按缺参处理
+        "source_table": _sanitize_table(draft.source_table),
         "file_asset_id": draft.file_asset_id,
         "target_conn_id": tgt.id if tgt else None,
-        # 表名净化：LLM 可能带库名前缀/反引号（与 probe 的 source_table 净化一致）
-        "target_table": (draft.target_table or "").rsplit(".", 1)[-1].strip("`\" ") or None,
+        "target_table": _sanitize_table(draft.target_table),
         "quality_requirements": draft.quality_requirements or [],
         "data_classification": draft.data_classification if draft.data_classification in
         ("public", "internal", "confidential", "secret") else "internal",
@@ -108,7 +119,7 @@ def _question_for(field: str, intent: IntentSpec) -> str:
     """缺参字段 → 人话提问。"""
     return {
         "source": "未找到 MySQL 源连接，请先在「数据连接」创建 MySQL 连接，或改用 CSV 文件资产。",
-        "source_table": "要同步哪张源表？（如 orders）",
+        "source_table": "要同步哪张源表？（如 orders / customers）",
         "target_table": "目标 Doris 表名是什么？（如 dwd_orders）",
         "target_conn": "未找到 Doris 目标连接，请先在「数据连接」创建 Doris 连接。",
     }.get(field, f"请补充: {field}")
