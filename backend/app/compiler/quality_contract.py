@@ -106,13 +106,17 @@ def compile_split(contract: dict, table: str | None = None) -> SplitSql:
     sel = _select_columns(columns, masking)
     # 1. 合格行 → __shadow（SELECT 列表内完成脱敏，D5 硬约束 5）
     shadow_sql = f"INSERT INTO `{t}__shadow` ({', '.join(f'`{c}`' for c in columns)}) SELECT {sel} FROM `{t}__raw` WHERE {cond}"
-    # 2. 违规行 → __err（追加错误码 CASE 与 run 元数据列）
-    err_codes = " ".join(
-        f"WHEN NOT ({_OPERATOR_PREDICATES[r['operator']].format(col=_check_ident(r['column']))}) THEN '{r.get('error_code', 'E_QUALITY')}'"
-        for r in rules
-    )
+    # 2. 违规行 → __err（追加错误码 CASE；无规则时占位常量，SQL 恒合法）
+    if rules:
+        err_codes = " ".join(
+            f"WHEN NOT ({_OPERATOR_PREDICATES[r['operator']].format(col=_check_ident(r['column']))}) THEN '{r.get('error_code', 'E_QUALITY')}'"
+            for r in rules
+        )
+        err_expr = f"CASE {err_codes} ELSE 'E_QUALITY' END"
+    else:
+        err_expr = "'E_NO_RULE'"
     err_sql = (
-        f"INSERT INTO `{t}__err` SELECT *, CASE {err_codes} ELSE 'E_QUALITY' END AS `__error_code` "
+        f"INSERT INTO `{t}__err` SELECT *, {err_expr} AS `__error_code` "
         f"FROM `{t}__raw` WHERE NOT ({cond})"
     )
     return SplitSql(shadow_sql=shadow_sql, err_sql=err_sql)

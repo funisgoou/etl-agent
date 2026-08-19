@@ -116,16 +116,21 @@ async def stream_run(
         await pubsub.subscribe(channel)
         try:
             idle = 0
+            last_status = run.status
             while True:
                 msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
                 if msg is None:
                     idle += 1
-                    # 终态兜底轮询（pub/sub 丢消息保护，纪律 #15）
+                    # 终态/状态变化兜底轮询（pub/sub 丢消息保护，纪律 #15）：每 5 个周期读库比对
                     if idle % 5 == 0:
-                        cur = await _current_status(run_id)
-                        if cur in TERMINAL:
-                            yield f"event: done\ndata: {json.dumps({'status': cur}, ensure_ascii=False)}\n\n"
-                            return
+                        snap = await _current_run(run_id)
+                        if snap is not None:
+                            if snap["status"] != last_status:
+                                last_status = snap["status"]
+                                yield f"event: status\ndata: {json.dumps(snap, ensure_ascii=False, default=str)}\n\n"
+                            if snap["status"] in TERMINAL:
+                                yield f"event: done\ndata: {json.dumps({'status': snap['status'], 'row_count_check': snap.get('row_count_check')}, ensure_ascii=False)}\n\n"
+                                return
                     if idle > 450:  # 15 分钟无事件超时关流（前端会重连）
                         return
                     continue
@@ -149,6 +154,16 @@ async def _current_status(run_id: int) -> str | None:
     async with factory() as db:
         row = (await db.execute(select(ExecutionRun.status).where(ExecutionRun.id == run_id))).scalar_one_or_none()
     return row
+
+
+async def _current_run(run_id: int) -> dict | None:
+    """兜底轮询用：读库返回 run 输出快照（SSE 补发完整状态）。"""
+    from app.core.db import make_session_factory
+
+    factory = make_session_factory()
+    async with factory() as db:
+        row = (await db.execute(select(ExecutionRun).where(ExecutionRun.id == run_id))).scalar_one_or_none()
+    return _run_out(row) if row is not None else None
 
 
 @router.post("/versions/{version_id}/dry-run", status_code=202)
