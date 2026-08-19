@@ -108,6 +108,7 @@ async def _execute_pipeline(payload: dict) -> None:
         await doris.ensure_table_family(target_table, cols_def)
         await doris.truncate_raw(target_table)
         await doris.rebuild_shadow(target_table)
+        await doris.reset_err_for_run(target_table)
         # 4. COPYING：SeaTunnel 搬运 源 → {t}__raw
         job = seatunnel_client.build_job_json(
             mode="dry_run" if dry else "execute", source=src_cfg, target_table=f"{target_table}__raw",

@@ -74,6 +74,14 @@ class Doris:
         """重建 shadow 槽位。"""
         await self._run(f"TRUNCATE TABLE `{table}__shadow`")
 
+    async def reset_err_for_run(self, table: str) -> None:
+        """run 隔离：清空本表 __err（C1 判据②按 run 计数，残留会导致 9+2≠10）。
+
+        D7 契约 __err 为追加留存取证表，跨 run 累积；因此每 run 开始先清，
+        C1 校验与错误码分布均基于当 run 数据。历史取证诉求由审计账本承载。
+        """
+        await self._run(f"TRUNCATE TABLE `{table}__err`")
+
     async def ensure_main_table(self, table: str, columns_def: str) -> None:
         """首跑正式表不存在时建同构表（HANDOVER §4.2.3）。"""
         await self._run(

@@ -326,11 +326,13 @@ async def freeze_version(
     report = gate_result["gate_report"]
     if not report["passed"]:
         raise ApiError("E_GATE_SCHEMA", "门禁未通过，存在 blocking 项", details={"findings": report["findings"]})
-    # 2. 制品摘要（EtlPlan 规范序列化 + 编译产物 SQL）
+    # 2. 制品摘要（版本标识 + EtlPlan 规范序列化 + 编译产物 SQL）
+    #    掺入 pipeline_id/version_number：同内容重建的同方案是不同制品实例（内容指纹
+    #    的职责改由 Commit 阶段的 input_fingerprint 承担，那里不含版本标识）
     plan_text = json.dumps(v.etl_plan_json, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     split_sql = compile_contract((v.etl_plan_json or {}).get("quality_contract", {}))
     sql_text = split_sql.shadow_sql + "\n" + split_sql.err_sql
-    digest = _digest(plan_text + "|" + v.hocon_text + "|" + sql_text)
+    digest = _digest(f"{v.pipeline_id}:{v.version_number}|" + plan_text + "|" + v.hocon_text + "|" + sql_text)
     # 3. 冻结 + 制品落库（同事务）
     v.artifact_digest = digest
     v.is_immutable = True
