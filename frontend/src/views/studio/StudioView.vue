@@ -379,9 +379,7 @@ const history = ref<AuditEvent[]>([])
 
 /* ---------- 对话状态 ---------- */
 interface ChatMsg { role: 'user' | 'agent'; text: string; time: string }
-const messages = ref<ChatMsg[]>([
-  { role: 'user', text: '我需要把 MySQL 里的 orders 表同步到 Doris，每天增量同步，过滤掉退款订单', time: nowTime() },
-])
+const messages = ref<ChatMsg[]>([])
 const prompt = ref('')
 const generating = ref(false)
 const answering = ref(false)

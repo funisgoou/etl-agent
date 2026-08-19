@@ -123,7 +123,9 @@ async def _execute_pipeline(payload: dict) -> None:
         decision, action = await snapshot_and_decide(run_id, {"input_records": raw_count}, budget)
         if decision == "breach":
             raise RuntimeError(f"budget breach at COPYING: input={raw_count}")
-        _publish(run_id, event="metrics", input_records=raw_count, sub_stage="COPYING")
+        elapsed_copy = max(int(time.monotonic() - t0), 1)
+        _publish(run_id, event="metrics", input_records=raw_count, sub_stage="COPYING",
+                 throughput_rps=int(raw_count / elapsed_copy), bytes_processed=raw_count * 256)
         # 5. SPLITTING：受管分流 SQL（编译产物，__err 附错误码）
         await _update(sub_stage="SPLITTING")
         _publish(run_id, event="status", status="running", sub_stage="SPLITTING")
@@ -144,8 +146,10 @@ async def _execute_pipeline(payload: dict) -> None:
                      "duration_seconds": int(time.monotonic() - t0)}, budget)
         if decision == "breach":
             raise RuntimeError(f"budget breach at SPLITTING: {out_count}/{err_count}")
+        elapsed_total = max(int(time.monotonic() - t0), 1)
         _publish(run_id, event="metrics", input_records=raw_count, output_records=out_count,
-                 error_records=err_count, sub_stage="SPLITTING")
+                 error_records=err_count, sub_stage="SPLITTING",
+                 throughput_rps=int((out_count + err_count) / elapsed_total))
         # 6. C1 双等式硬判据
         expected = min(src_count, s.dry_run_sample_limit) if dry and src_count else src_count
         c1 = (raw_count == expected) and (out_count + err_count == raw_count)

@@ -93,8 +93,8 @@
 
       <!-- 活跃 Pipeline Top5 -->
       <GlassPanel class="rise-in" title="近期活跃 Pipeline Top5" subtitle="近 7 天 · 按运行次数">
-        <ol class="top5">
-          <li v-for="(t, i) in top5" :key="t.name" class="top5__row">
+        <ol v-if="top5.length" class="top5">
+          <li v-for="(t, i) in top5" :key="t.pipeline_id" class="top5__row">
             <span class="top5__rank num">{{ i + 1 }}</span>
             <span class="top5__name">{{ t.name }}</span>
             <span class="top5__count">
@@ -103,6 +103,9 @@
             </span>
           </li>
         </ol>
+        <p v-else class="top5__empty" style="color: var(--txt-3); padding: 18px 4px; font-size: 13px">
+          近 7 天暂无执行记录，触发一次 Dry-Run 或正式执行后展示
+        </p>
       </GlassPanel>
     </div>
   </div>
@@ -196,21 +199,16 @@ const trendOption = computed<EChartsOption>(() => {
   }
 })
 
-const top5 = [
-  { name: 'orders 增量同步 → Doris', count: 23, ok: true },
-  { name: 'user_center 全量归档', count: 18, ok: true },
-  { name: 'refund 退款明细清洗', count: 15, ok: false },
-  { name: 'dim_region 维表同步', count: 12, ok: true },
-  { name: 'crm_contract 合同抽取', count: 9, ok: true },
-]
+const top5 = ref<{ pipeline_id: number; name: string; count: number; ok: boolean }[]>([])
 
 onMounted(async () => {
   if (!projectStore.loaded) await projectStore.fetchList()
-  const [conns, pipelines, preps, runPage] = await Promise.all([
+  const [conns, pipelines, preps, runPage, top] = await Promise.all([
     connApi.list(pid.value, { page_size: 100 }),
     pipelineApi.list(pid.value, { page_size: 100 }),
     prepApi.list(pid.value, { status: 'pending', page_size: 5 }),
     runApi.list(pid.value, { page_size: 100 }),
+    runApi.topPipelines(pid.value, { days: 7, limit: 5 }).catch(() => []),
   ])
   connTotal.value = conns.total
   connOk.value = conns.items.filter((c) => c.status === 'connected').length
@@ -219,6 +217,7 @@ onMounted(async () => {
   pendingPreps.value = preps.total
   todoList.value = preps.items
   runs.value = runPage.items
+  top5.value = top
 })
 </script>
 

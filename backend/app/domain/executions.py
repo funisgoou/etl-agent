@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends
@@ -264,3 +264,35 @@ async def rerun(
                            {"rerun_of": run_id})
         await tx.commit()
     return {"execution_run_id": new_run.id, "rerun_of": run_id, "audit_event_id": evt.id}
+
+
+@router.get("/projects/{project_id}/execution-runs/top-pipelines")
+async def top_pipelines(
+    project_id: int,
+    days: int = 7,
+    limit: int = 5,
+    user=Depends(security.current_user),
+    db: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """项目内近 N 天按运行次数聚合的 Pipeline 排行（工作台 Top5）。"""
+    await security.require_member(project_id)(user, db)
+    cutoff = datetime.now(UTC) - timedelta(days=min(days, 30))
+    pipe_ids = select(Pipeline.id).where(Pipeline.project_id == project_id)
+    ver_ids = select(PipelineVersion.id).where(PipelineVersion.pipeline_id.in_(pipe_ids))
+    rows = (
+        await db.execute(
+            select(Pipeline.id, Pipeline.name, func.count(ExecutionRun.id).label("runs"),
+                   func.sum(func.coalesce(ExecutionRun.error_records, 0)).label("err_rows"))
+            .select_from(ExecutionRun)
+            .join(PipelineVersion, PipelineVersion.id == ExecutionRun.version_id)
+            .join(Pipeline, Pipeline.id == PipelineVersion.pipeline_id)
+            .where(ExecutionRun.version_id.in_(ver_ids), ExecutionRun.created_at >= cutoff)
+            .group_by(Pipeline.id, Pipeline.name)
+            .order_by(func.count(ExecutionRun.id).desc())
+            .limit(min(limit, 10))
+        )
+    ).all()
+    return [
+        {"pipeline_id": pid, "name": name, "count": int(runs), "ok": int(err_rows or 0) == 0}
+        for pid, name, runs, err_rows in rows
+    ]

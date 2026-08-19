@@ -166,7 +166,7 @@
 
         <p class="apv__cap">
           <el-icon :size="13" color="var(--green)"><CircleCheckFilled /></el-icon>
-          Capability 令牌已验证 · 有效期剩余 13:58
+          双审批通过后，Commit 时签发 Ed25519 单次 Capability（TTL 5 分钟 · 防重放）
         </p>
       </div>
 

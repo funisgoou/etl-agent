@@ -70,10 +70,20 @@ async def list_events(
         q = q.where(AuditEvent.event_type.ilike(f"%{keyword}%"))
     rows = (await db.execute(q.order_by(AuditEvent.id.desc()).offset((page - 1) * page_size).limit(page_size))).scalars().all()
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    # 操作人名字联查（审计列表展示用；id 集中去查，避免 N+1）
+    from app.db_model import User
+
+    actor_ids = {r.actor_id for r in rows}
+    name_map: dict[int, str] = {}
+    if actor_ids:
+        for uid, dname in (
+            await db.execute(select(User.id, User.display_name).where(User.id.in_(actor_ids)))
+        ).all():
+            name_map[uid] = dname
     return {
         "items": [
             {"id": r.id, "project_id": r.project_id, "actor_id": r.actor_id,
-             "actor_name": None, "event_type": r.event_type,
+             "actor_name": name_map.get(r.actor_id), "event_type": r.event_type,
              "resource_type": r.resource_type, "resource_id": str(r.resource_id),
              "summary": _EVENT_LABELS.get(r.event_type, r.event_type),
              "payload_json": r.payload_json,

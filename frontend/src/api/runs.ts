@@ -18,6 +18,13 @@ export const runApi = {
   rollback(id: number | string) {
     return post<{ id: number; status: string; audit_event_id: number }>(`/execution-runs/${id}/rollback`)
   },
+    /** 近 N 天运行次数 Top Pipeline（工作台排行） */
+  topPipelines(projectId: number | string, params?: { days?: number; limit?: number }) {
+    return get<{ pipeline_id: number; name: string; count: number; ok: boolean }[]>(
+      `/projects/${projectId}/execution-runs/top-pipelines`,
+      params,
+    )
+  },
   /** 安全重跑（R6）：仅终态 run，否则 E_RUN_INVALID_STATE */
   rerun(id: number | string) {
     return post<{ execution_run_id: number; rerun_of: number; audit_event_id: number }>(
