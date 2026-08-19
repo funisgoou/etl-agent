@@ -88,8 +88,9 @@ def create_app() -> FastAPI:
             components["redis"] = f"error: {exc}"
             degraded = True
         # 3c. 数据面（尽力而为，不计入 degraded——数据面独立 profile）
+        # SeaTunnel 2.3.12 无 /hazelcast/rest/health 端点（空回复）；用作业列表接口作活性探测
         s = get_settings()
-        for name, url in (("seatunnel", f"{s.seatunnel_url}/hazelcast/rest/health") ,):
+        for name, url in (("seatunnel", f"{s.seatunnel_url}/hazelcast/rest/maps/finished-jobs"),):
             try:
                 async with httpx.AsyncClient(timeout=2) as c:
                     r = await c.get(url)
